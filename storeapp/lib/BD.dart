@@ -1,75 +1,215 @@
+import 'package:intl/intl.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'Controller/produit.dart';
 
 class DatabaseHelper {
-  static final DatabaseHelper instance = DatabaseHelper._instance();
+  static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+  static final tableAchats = 'achats';
+  static final tableProduits = 'produit';
+  DatabaseHelper._init();
 
-  DatabaseHelper._instance();
-
-  Future<Database> get db async {
-    _database ??= await initDb();
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDB('database.db');
     return _database!;
   }
 
-Future<Database> initDb() async {
-  String databasesPath = await getDatabasesPath();
-  return openDatabase(
-    join(databasesPath, 'database.db'),
-    version: 2, // Increment the version number
-    onUpgrade: (db, oldVersion, newVersion) async {
-      if (oldVersion < 2) {
-        // Add the missing column
-        await db.execute('ALTER TABLE produit ADD COLUMN prix_achat REAL');
-      }
-    },
-    onCreate: (db, version) async {
-      await db.execute('''
-        CREATE TABLE produit (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          nom TEXT NOT NULL,
-          type TEXT NOT NULL,
-          p_vente REAL NOT NULL,
-          prix_achat REAL NOT NULL, -- Ensure this column is present
-          qte_stock INTEGER NOT NULL
-        )
-      ''');
-    },
+  Future<Database> _initDB(String filePath) async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, filePath);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _onCreate,
+    );
+  }
+
+// Méthode pour récupérer les achats et les informations de prix de vente et d'achat
+  Future<List<Map<String, dynamic>>> getAllPurchases() async {
+    final db = await database;
+
+    // Requête SQL avec jointure pour récupérer la date, le prix d'achat, le prix de vente et la quantité
+    final result = await db.rawQuery('''
+      SELECT a.date, a.quantity, p.prix_achat, p.p_vente
+      FROM $tableAchats a
+      JOIN $tableProduits p ON a.id = p.id
+    ''');
+
+    return result;
+  }
+
+
+  Future<void> _onCreate(Database db, int version) async {
+    // Création de la table produit
+    await db.execute(''' 
+      CREATE TABLE produit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL,
+        type TEXT NOT NULL,
+        p_vente REAL NOT NULL,
+        prix_achat REAL NOT NULL,
+        qte_stock INTEGER NOT NULL
+      )
+    ''');
+
+    // Création de la table transactions
+    await db.execute('''
+      CREATE TABLE transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        total REAL NOT NULL,
+        date DATE NOT NULL
+      )
+    ''');
+
+    // Création de la table achats avec un champ transactionId
+    await db.execute('''
+      CREATE TABLE achats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        productId INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        date DATETIME NOT NULL,
+        transactionId INTEGER NOT NULL,
+        FOREIGN KEY (productId) REFERENCES produit (id),
+        FOREIGN KEY (transactionId) REFERENCES transactions (id)
+      )
+    ''');
+
+    // Création de la table cart
+    await db.execute(''' 
+      CREATE TABLE cart (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        productId INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        FOREIGN KEY (productId) REFERENCES produit (id)
+      )
+    ''');
+  }
+// Méthode pour insérer une transaction et récupérer son ID
+Future<int> insertTransaction(double total) async {
+  final db = await instance.database;
+  return await db.insert('transactions', {
+    'total': total,
+    'date': DateTime.now().toIso8601String().split('T')[0], // Date actuelle
+  });
+}
+
+// Méthode pour insérer un achat avec l'ID de la transaction
+Future<void> insertPurchaseWithTransaction(Map<String, dynamic> purchase, double totalPrice) async {
+  final db = await instance.database;
+  // Insérer un achat avec le transactionId
+  await db.insert('achats', {
+    'productId': purchase['productId'],
+    'quantity': purchase['quantity'],
+    'date': purchase['date'],
+    'transactionId': purchase['transactionId'], // ID de la transaction
+  });
+}
+Future<List<Map<String, dynamic>>> getPurchasesBetweenDates(DateTime startDate, DateTime endDate) async {
+  final db = await instance.database;
+
+  // Convertir les dates au format 'yyyy-MM-dd' pour la comparaison dans la base de données
+  String startDateString = DateFormat('yyyy-MM-dd').format(startDate);
+  String endDateString = DateFormat('yyyy-MM-dd').format(endDate);
+
+  // Requête SQL pour récupérer les achats entre deux dates
+  return await db.query(
+    'achats',
+    where: 'date BETWEEN ? AND ?',
+    whereArgs: [startDateString, endDateString],
   );
 }
 
 
+  // Méthode pour rechercher des produits
+  Future<List<Map<String, dynamic>>> searchProducts(String query) async {
+    final db = await instance.database;
+    return await db.query(
+      'produit',
+      where: 'nom LIKE ?',
+      whereArgs: ['%$query%'],
+    );
+  }
+
+  // Méthodes pour la table produit
   Future<int> insertUser(Produit p) async {
-    Database db = await instance.db;
+    final db = await instance.database;
     return await db.insert('produit', p.toMap());
   }
 
   Future<List<Map<String, dynamic>>> queryAllProduits() async {
-    Database db = await instance.db;
+    final db = await instance.database;
     return await db.query('produit');
   }
 
   Future<int> updateUser(Produit p) async {
-    Database db = await instance.db;
+    final db = await instance.database;
     return await db.update('produit', p.toMap(), where: 'id = ?', whereArgs: [p.id]);
   }
 
   Future<int> deleteProduct(int id) async {
-    Database db = await instance.db;
+    final db = await instance.database;
     return await db.delete('produit', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<void> initializeProduits() async {
-    List<Produit> produitToAdd = [
-    Produit(id: 1,nom: 'p1', type: 't1',pvente:10.0,pachat:5.0,qte: 11),
-    Produit(id: 2,nom: 'p2', type: 't2',pvente:10.0,pachat:5.0,qte: 11),
-    Produit(id: 3,nom: 'p3', type: 't3',pvente:10.0,pachat:5.0,qte: 11),
-    Produit(id: 4,nom: 'p4', type: 't4',pvente:10.0,pachat:5.0,qte: 11),
-    ];
+  // Méthodes pour la table cart
+  Future<void> addToCart(int productId) async {
+    final db = await instance.database;
 
-    for (Produit p in produitToAdd) {
-      await insertUser(p);
+    // Vérifier si le produit existe déjà dans le panier
+    final existingCartItem = await db.query(
+      'cart',
+      where: 'productId = ?',
+      whereArgs: [productId],
+    );
+
+    if (existingCartItem.isNotEmpty) {
+      // Incrémenter la quantité
+      final cartItem = existingCartItem.first;
+      final updatedQuantity = (cartItem['quantity'] as int) + 1;
+      await db.update(
+        'cart',
+        {'quantity': updatedQuantity},
+        where: 'id = ?',
+        whereArgs: [cartItem['id']],
+      );
+    } else {
+      // Ajouter un nouveau produit
+      await db.insert('cart', {'productId': productId, 'quantity': 1});
     }
+  }
+
+  Future<List<Map<String, dynamic>>> getCartItems() async {
+    final db = await instance.database;
+
+    // Charger les produits du panier avec leurs détails
+    return await db.rawQuery('''
+      SELECT cart.id, produit.nom, produit.p_vente, cart.quantity
+      FROM cart
+      INNER JOIN produit ON cart.productId = produit.id
+    ''');
+  }
+
+  Future<void> updateCartQuantity(int cartId, int newQuantity) async {
+    final db = await instance.database;
+
+    if (newQuantity <= 0) {
+      // Supprimer l'article si la quantité est 0
+      await db.delete('cart', where: 'id = ?', whereArgs: [cartId]);
+    } else {
+      // Mettre à jour la quantité
+      await db.update(
+        'cart',
+        {'quantity': newQuantity},
+        where: 'id = ?',
+        whereArgs: [cartId],
+      );
+    }
+  }
+
+  Future<void> removeFromCart(int cartId) async {
+    final db = await instance.database;
+    await db.delete('cart', where: 'id = ?', whereArgs: [cartId]);
   }
 }

@@ -13,11 +13,13 @@ class _ProductManagementPageState extends State<ProductManagementPage> {
   List<Map<String, dynamic>> filteredProducts = [];
   // Liste des produits (à mettre à jour avec les données de la base)
   List<Map<String, dynamic>> products = [];
-
+  String searchQuery = '';
   @override
   void initState() {
     super.initState();
     _loadProducts();
+    _searchProducts('');
+   
   }
 
   Future<void> _loadProducts() async {
@@ -25,7 +27,9 @@ class _ProductManagementPageState extends State<ProductManagementPage> {
     final allProducts = await db.queryAllProduits();
     setState(() {
       products = allProducts;
-      filteredProducts = allProducts; 
+      print(products);
+      
+      filteredProducts = products; 
     });
   }
   void _filterProducts(String query) {
@@ -34,6 +38,12 @@ class _ProductManagementPageState extends State<ProductManagementPage> {
           .where((product) =>
               product['nom'].toLowerCase().contains(query.toLowerCase())) // Recherche insensible à la casse
           .toList();
+    });
+  }
+    Future<void> _searchProducts(String query) async {
+    final products = await DatabaseHelper.instance.searchProducts(query);
+    setState(() {
+      filteredProducts = products;
     });
   }
   // Méthode pour afficher un formulaire et ajouter un produit
@@ -241,7 +251,12 @@ void _deleteProduct(Map<String, dynamic> product) {
                 prefixIcon: Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              onChanged: _filterProducts,
+           onChanged: (query) {
+                setState(() {
+                  searchQuery = query;
+                });
+                _searchProducts(searchQuery);
+              },
             ),
             SizedBox(height: 16),
 

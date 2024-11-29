@@ -25,7 +25,7 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
   final _pages = [
-    CartPage(), // Page 1 : Calcul des produits dans le panier
+    PanierPage(), // Page 1 : Calcul des produits dans le panier
     ProductManagementPage(), // Page 2 : Gestion des produits
     Gain(), // Page 3 : Gain total entre deux dates
   ];

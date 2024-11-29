@@ -1,131 +1,201 @@
 import 'package:flutter/material.dart';
-import '../BD.dart';
+import '../BD.dart'; // Assurez-vous d'avoir votre helper de base de données
 
-class CartPage extends StatefulWidget {
+class PanierPage extends StatefulWidget {
   @override
-  _CartPageState createState() => _CartPageState();
+  _PanierPageState createState() => _PanierPageState();
 }
 
-class _CartPageState extends State<CartPage> {
-  final TextEditingController _searchController = TextEditingController();
-  double _total = 0.0;
+class _PanierPageState extends State<PanierPage> {
+  List<Map<String, dynamic>> productsInCart = [];
+  List<Map<String, dynamic>> filteredProducts = [];
+  String searchQuery = '';
+  
 
-  // Exemple de données de produits dans le panier
-  List<Map<String, dynamic>> basket = [
-    {'name': 'Produit 1', 'price': 10.0, 'quantity': 1},
-    {'name': 'Produit 2', 'price': 15.0, 'quantity': 2},
-    {'name': 'Produit 3', 'price': 5.0, 'quantity': 3},
-  ];
-
-  // Met à jour le total
-  void _updateTotal() {
+  // Récupérer les produits filtrés selon la recherche
+  Future<void> _searchProducts(String query) async {
+    final products = await DatabaseHelper.instance.searchProducts(query);
     setState(() {
-      _total = basket.fold(0.0, (sum, item) => sum + item['price'] * item['quantity']);
+      filteredProducts = products;
     });
   }
+
+
+  // Ajouter un produit au panier ou mettre à jour la quantité
+  void addToCart(Map<String, dynamic> product) {
+    setState(() {
+      bool productExists = false;
+      for (var item in productsInCart) {
+        if (item['id'] == product['id']) {
+          productExists = true;
+          item['quantity']++;
+        }
+      }
+      if (!productExists) {
+        productsInCart.add({
+          'id': product['id'],
+          'nom': product['nom'],
+          'p_vente': product['p_vente'],
+          'quantity': 1,
+        });
+      }
+    });
+  }
+
+  // Supprimer un produit du panier
+  void removeFromCart(int productId) {
+    setState(() {
+      productsInCart.removeWhere((item) => item['id'] == productId);
+    });
+  }
+
+  // Mettre à jour la quantité d'un produit
+  void updateQuantity(int productId, int quantity) {
+    setState(() {
+      if (quantity > 0) {
+        for (var item in productsInCart) {
+          if (item['id'] == productId) {
+            item['quantity'] = quantity;
+          }
+        }
+      }
+    });
+  }
+
+  // Calculer le total du panier
+  double get totalPrice {
+    double total = 0;
+    for (var product in productsInCart) {
+      total += product['p_vente'] * product['quantity'];
+    }
+    return total;
+  }
+Future<void> confirmPurchase() async {
+  final date = DateTime.now().toIso8601String().split('T')[0];
+
+  // Insérer une transaction et récupérer son ID
+  final transactionId = await DatabaseHelper.instance.insertTransaction(totalPrice);
+
+  // Insérer chaque produit du panier dans la table des achats avec le même ID de transaction
+  for (var product in productsInCart) {
+    await DatabaseHelper.instance.insertPurchaseWithTransaction({
+      'productId': product['id'],
+      'quantity': product['quantity'],
+      'date': date,
+      'transactionId': transactionId, // Utiliser le même transactionId pour tous les achats
+    }, totalPrice);
+  }
+
+  // Afficher un message de confirmation
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Achat confirmé avec succès !')));
+
+  // Vider le panier
+  setState(() {
+    productsInCart.clear();
+  });
+
+  // Optionnel: récupérer et afficher les achats dans la base de données
+  DatabaseHelper.instance.getAllPurchases();
+}
+
+
+
 
   @override
   void initState() {
     super.initState();
-    _updateTotal();
+    _searchProducts('');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Panier'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          children: [
-            // Barre de recherche
-            TextField(
-              controller: _searchController,
+      appBar: AppBar(title: Text("Panier")),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
               decoration: InputDecoration(
                 labelText: 'Rechercher un produit',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(),
               ),
-              onChanged: (value) {
-                // Logique de recherche à ajouter ici
+              onChanged: (query) {
+                setState(() {
+                  searchQuery = query;
+                });
+                _searchProducts(searchQuery);
               },
             ),
-            SizedBox(height: 16),
-            
-            // Afficher le total des achats
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total :',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: filteredProducts.length,
+              itemBuilder: (context, index) {
+                final product = filteredProducts[index];
+                return ListTile(
+                  title: Text(product['nom']),
+                  subtitle: Text('Prix: \DA${product['p_vente'].toStringAsFixed(2)}'),
+                  trailing: IconButton(
+                    icon: Icon(Icons.add_shopping_cart),
+                    onPressed: () => addToCart(product),
                   ),
-                  Text(
-                    '${_total.toStringAsFixed(2)} \$',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
-            SizedBox(height: 16),
-
-            // Liste des produits dans le panier
-            Expanded(
-              child: ListView.builder(
-                itemCount: basket.length,
-                itemBuilder: (context, index) {
-                  final product = basket[index];
-                  return Card(
-                    margin: EdgeInsets.symmetric(vertical: 8),
-                    child: ListTile(
-                      title: Text(product['name']),
-                      subtitle: Text('Prix: ${product['price'].toStringAsFixed(2)} \$'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Bouton pour diminuer la quantité
-                          IconButton(
-                            icon: Icon(Icons.remove, color: Colors.red),
-                            onPressed: () {
-                              setState(() {
-                                if (product['quantity'] > 1) {
-                                  product['quantity']--;
-                                  _updateTotal();
-                                }
-                              });
-                            },
-                          ),
-                          Text(
-                            '${product['quantity']}',
-                            style: TextStyle(fontSize: 16),
-                          ),
-                          // Bouton pour augmenter la quantité
-                          IconButton(
-                            icon: Icon(Icons.add, color: Colors.green),
-                            onPressed: () {
-                              setState(() {
-                                product['quantity']++;
-                                _updateTotal();
-                              });
-                            },
-                          ),
-                        ],
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              'Total: \DA${totalPrice.toStringAsFixed(2)}',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: productsInCart.length,
+              itemBuilder: (context, index) {
+                final product = productsInCart[index];
+                return ListTile(
+                  title: Text(product['nom']),
+                  subtitle: Row(
+                    children: [
+                      Text('Prix: \DA${product['p_vente'].toStringAsFixed(2)}'),
+                      SizedBox(width: 10),
+                      // Contrôle de la quantité
+                      IconButton(
+                        icon: Icon(Icons.remove),
+                        onPressed: () {
+                          if (product['quantity'] > 1) {
+                            updateQuantity(product['id'], product['quantity'] - 1);
+                          }
+                        },
                       ),
-                    ),
-                  );
-                },
-              ),
+                      Text('${product['quantity']}'),
+                      IconButton(
+                        icon: Icon(Icons.add),
+                        onPressed: () {
+                          updateQuantity(product['id'], product['quantity'] + 1);
+                        },
+                      ),
+                    ],
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(Icons.delete),
+                    onPressed: () => removeFromCart(product['id']),
+                  ),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton(
+              onPressed: confirmPurchase,
+              child: Text('Confirmer l\'achat'),
+            ),
+          ),
+        ],
       ),
     );
   }

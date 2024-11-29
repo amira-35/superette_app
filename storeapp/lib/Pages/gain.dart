@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-
-import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // Pour la gestion des dates
+import 'package:storeapp/BD.dart'; // Import de la classe DatabaseHelper
 
 class Gain extends StatefulWidget {
   @override
@@ -13,53 +12,70 @@ class _GainState extends State<Gain> {
   DateTime? _endDate;
   double _totalSales = 0.0; // Gain total (prix de vente total)
   double _realGain = 0.0; // Gain réel (prix vente - prix achat)
+  List<Map<String, dynamic>> _purchaseHistory = []; // Liste des achats
+// Méthode pour sélectionner une date
+Future<void> _selectDate(BuildContext context, bool isStartDate) async {
+  final DateTime initialDate = isStartDate ? _startDate ?? DateTime.now() : _endDate ?? DateTime.now();
+  final DateTime firstDate = DateTime(2000); // Date la plus ancienne possible
+  final DateTime lastDate = DateTime.now(); // Date la plus récente possible
 
-  // Exemple de données de vente
-  List<Map<String, dynamic>> sales = [
-    {'date': DateTime(2024, 11, 10), 'salePrice': 100.0, 'purchasePrice': 70.0},
-    {'date': DateTime(2024, 11, 12), 'salePrice': 200.0, 'purchasePrice': 150.0},
-    {'date': DateTime(2024, 11, 14), 'salePrice': 150.0, 'purchasePrice': 100.0},
-  ];
+  final DateTime? picked = await showDatePicker(
+    context: context,
+    initialDate: initialDate,
+    firstDate: firstDate,
+    lastDate: lastDate,
+  );
 
-  // Méthode pour ouvrir le sélecteur de date
-  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-
-    if (picked != null) {
-      setState(() {
-        if (isStartDate) {
-          _startDate = picked;
-        } else {
-          _endDate = picked;
-        }
-        _calculateGains();
-      });
-    }
-  }
-
-  // Méthode pour calculer les gains
-  void _calculateGains() {
-    if (_startDate != null && _endDate != null) {
-      double totalSales = 0.0;
-      double realGain = 0.0;
-
-      for (var sale in sales) {
-        if (sale['date'].isAfter(_startDate!) && sale['date'].isBefore(_endDate!)) {
-          totalSales += sale['salePrice'];
-          realGain += sale['salePrice'] - sale['purchasePrice'];
-        }
+  if (picked != null && picked != initialDate) {
+    setState(() {
+      if (isStartDate) {
+        _startDate = picked;
+      } else {
+        _endDate = picked;
       }
+    });
 
-      setState(() {
-        _totalSales = totalSales;
-        _realGain = realGain;
-      });
+    // Après la sélection, vous pouvez recalculer les gains en fonction des nouvelles dates, si nécessaire
+    _calculateGains();
+  }
+}
+
+  // Méthode pour calculer les gains et récupérer l'historique des achats
+void _calculateGains() async {
+  if (_startDate != null && _endDate != null) {
+    double totalSales = 0.0;
+    double realGain = 0.0;
+
+    // Récupérer les achats avec les informations des prix depuis la base de données
+    List<Map<String, dynamic>> purchases = await DatabaseHelper.instance.getAllPurchases();
+    print(purchases);
+    // Calcul des gains et préparation de l'historique des achats
+    setState(() {
+      _purchaseHistory = purchases;
+    });
+
+    // Calcul des gains
+    for (var purchase in purchases) {
+      double purchasePrice = (purchase['prix_achat'] != null) ? purchase['prix_achat'].toDouble() : 0.0;
+      double salePrice = (purchase['p_vente'] != null) ? purchase['p_vente'].toDouble() : 0.0;
+      int quantity = (purchase['quantity'] != null) ? purchase['quantity'] : 0;
+
+      totalSales += salePrice * quantity;
+      realGain += (salePrice - purchasePrice) * quantity;
     }
+
+    setState(() {
+      _totalSales = totalSales;
+      _realGain = realGain;
+    });
+  }
+}
+
+
+  @override
+  void initState() {
+    super.initState();
+    _calculateGains(); // Récupère immédiatement les achats dès le démarrage
   }
 
   @override
@@ -73,7 +89,7 @@ class _GainState extends State<Gain> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Sélection de la date de début
+            // Sélection de la date de début (optionnel si vous ne voulez pas filtrer par dates)
             Row(
               children: [
                 Expanded(
@@ -95,7 +111,7 @@ class _GainState extends State<Gain> {
                   ),
                 ),
                 SizedBox(width: 16),
-                // Sélection de la date de fin
+                // Sélection de la date de fin (optionnel si vous ne voulez pas filtrer par dates)
                 Expanded(
                   child: GestureDetector(
                     onTap: () => _selectDate(context, false),
@@ -134,21 +150,50 @@ class _GainState extends State<Gain> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'Gain total (ventes): ${_totalSales.toStringAsFixed(2)} \$',
+                    'Gain total (ventes): ${_totalSales.toStringAsFixed(2)} \DA',
                     style: TextStyle(fontSize: 16, color: Colors.green),
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'Gain réel (profit): ${_realGain.toStringAsFixed(2)} \$',
+                    'Gain réel (profit): ${_realGain.toStringAsFixed(2)} \DA',
                     style: TextStyle(fontSize: 16, color: Colors.blue),
                   ),
                 ],
               ),
             ),
+
+            SizedBox(height: 20),
+
+            // Affichage de l'historique des achats
+            Text(
+              'Historique des achats:',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+
+            // Liste des achats
+            Expanded(
+  child: ListView.builder(
+    itemCount: _purchaseHistory.length,
+    itemBuilder: (context, index) {
+      var purchase = _purchaseHistory[index];
+      return Card(
+        margin: EdgeInsets.symmetric(vertical: 8),
+        child: ListTile(
+          title: Text('Date: ${DateFormat('dd/MM/yyyy').format(DateTime.parse(purchase['date']))}'),
+          subtitle: Text(
+            'Prix achat: ${purchase['prix_achat']} \DA | Prix vente: ${purchase['p_vente']} \DA | Quantité: ${purchase['quantity']}',
+            style: TextStyle(fontSize: 14),
+          ),
+        ),
+      );
+    },
+  ),
+),
+
           ],
         ),
       ),
     );
   }
 }
-
