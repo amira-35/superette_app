@@ -10,7 +10,6 @@ class _PanierPageState extends State<PanierPage> {
   List<Map<String, dynamic>> productsInCart = [];
   List<Map<String, dynamic>> filteredProducts = [];
   String searchQuery = '';
-  
 
   // Récupérer les produits filtrés selon la recherche
   Future<void> _searchProducts(String query) async {
@@ -19,7 +18,6 @@ class _PanierPageState extends State<PanierPage> {
       filteredProducts = products;
     });
   }
-
 
   // Ajouter un produit au panier ou mettre à jour la quantité
   void addToCart(Map<String, dynamic> product) {
@@ -70,34 +68,36 @@ class _PanierPageState extends State<PanierPage> {
     }
     return total;
   }
+
 Future<void> confirmPurchase() async {
   final date = DateTime.now().toIso8601String().split('T')[0];
 
-  // Insérer une transaction et récupérer son ID
+  // Insert transaction and get its ID
   final transactionId = await DatabaseHelper.instance.insertTransaction(totalPrice);
 
-  // Insérer chaque produit du panier dans la table des achats avec le même ID de transaction
+  // Insert each product in the cart into the purchases table
   for (var product in productsInCart) {
     await DatabaseHelper.instance.insertPurchaseWithTransaction({
       'productId': product['id'],
       'quantity': product['quantity'],
       'date': date,
-      'transactionId': transactionId, // Utiliser le même transactionId pour tous les achats
+      'transactionId': transactionId,
     }, totalPrice);
+
+    // Update the stock for the product
+    await DatabaseHelper.instance.updateStockAfterPurchase(product['id'], product['quantity']);
   }
 
-  // Afficher un message de confirmation
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Achat confirmé avec succès !')));
+  // Confirm the purchase
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Achat confirmé avec succès !')),
+  );
 
-  // Vider le panier
+  // Clear the cart
   setState(() {
     productsInCart.clear();
   });
-
-  // Optionnel: récupérer et afficher les achats dans la base de données
-  DatabaseHelper.instance.getAllPurchases();
 }
-
 
 
 

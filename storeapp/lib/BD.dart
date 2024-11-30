@@ -131,6 +131,43 @@ Future<List<Map<String, dynamic>>> getPurchasesBetweenDates(DateTime startDate, 
       whereArgs: ['%$query%'],
     );
   }
+ // Exemple de mise à jour du stock
+Future<void> updateProductStock(int productId, int quantity) async {
+  final db = await instance.database;
+  await db.rawUpdate(
+    'UPDATE produit SET qte_stock = ? WHERE id = ?',
+    [quantity, productId],
+  );
+}
+Future<void> updateStockAfterPurchase(int productId, int quantityPurchased) async {
+  final db = await instance.database;
+
+  // Query the product
+  final product = await db.query(
+    'produit',
+    where: 'id = ?',
+    whereArgs: [productId],
+  );
+
+  if (product.isNotEmpty) {
+    // Cast the stock value to int
+    int currentStock = product.first['qte_stock'] as int;
+
+    // Calculate the new stock
+    int newStock = currentStock - quantityPurchased;
+
+    // Update the stock in the database
+    await db.rawUpdate(
+      'UPDATE produit SET qte_stock = ? WHERE id = ?',
+      [newStock, productId],
+    );
+  } else {
+    print('Product with ID $productId not found.');
+  }
+}
+
+
+
 
   // Méthodes pour la table produit
   Future<int> insertUser(Produit p) async {
