@@ -172,7 +172,7 @@ void _calculateGains() async {
             SizedBox(height: 8),
 
             // Liste des achats
-            Expanded(
+           Expanded(
   child: ListView.builder(
     itemCount: _purchaseHistory.length,
     itemBuilder: (context, index) {
@@ -180,8 +180,12 @@ void _calculateGains() async {
       return Card(
         margin: EdgeInsets.symmetric(vertical: 8),
         child: ListTile(
-          title: Text('Date: ${DateFormat('dd/MM/yyyy').format(DateTime.parse(purchase['date']))}'),
+          title: Text(
+            'Produit: ${purchase['nom']}',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
           subtitle: Text(
+            'Date: ${DateFormat('dd/MM/yyyy').format(DateTime.parse(purchase['date']))}\n'
             'Prix achat: ${purchase['prix_achat']} \DA | Prix vente: ${purchase['p_vente']} \DA | Quantité: ${purchase['quantity']}',
             style: TextStyle(fontSize: 14),
           ),
@@ -190,6 +194,7 @@ void _calculateGains() async {
     },
   ),
 ),
+
 
           ],
         ),

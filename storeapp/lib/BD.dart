@@ -32,7 +32,7 @@ class DatabaseHelper {
 
     // Requête SQL avec jointure pour récupérer la date, le prix d'achat, le prix de vente et la quantité
     final result = await db.rawQuery('''
-      SELECT a.date, a.quantity, p.prix_achat, p.p_vente
+      SELECT a.date, a.quantity, p.prix_achat, p.p_vente,p.nom
       FROM $tableAchats a
       JOIN $tableProduits p ON a.id = p.id
     ''');
